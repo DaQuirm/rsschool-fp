@@ -58,9 +58,10 @@ Lazy.apply =
 
 Lazy.lift2 = compose(compose(Lazy.apply))(Lazy.map);
 
-
 // (a -> Lazy b) -> Lazy a -> Lazy b
-Lazy.bind = f => lA => Lazy.eval(compose(f)(lA))
+// Lazy.bind = Lazy2(f => lA => Lazy.eval(Lazy.eval(Lazy.map(f)(lA))))
+// Lazy.bind = Lazy2(f => lA => Lazy.eval(f(Lazy.eval(lA))));
+Lazy.bind = Lazy2(compose(compose(Lazy.eval))(flip(compose)(Lazy.eval)));
 
 const l2 = Lazy.constant(2);
 const l5 = Lazy.map(_.add(2))(Lazy.constant(3));
@@ -91,7 +92,8 @@ const correct = Eff.lift2(_.eq)(guessed)(guess); // Eff Boolean
 const _log = x => console.log(x); 
 const log = Eff(_log); // String -> Eff Unit
 
+const result0 = Eff.bind(log)()
 const result = Eff.bind(log)(correct);
 
 // console.log(Eff.eval(randomRange(5)));
-// Eff.eval(result);
+Eff.eval(result);
