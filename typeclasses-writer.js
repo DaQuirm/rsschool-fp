@@ -1,37 +1,72 @@
 // "Typeclasses", Monoid & Writer, Kleisli composition
-// TODO: partial instances (???)
+// TODO: Traversable
 
-// Show String
-String.show = s => `'${s}'`
+// "Haskell" impl in JS can be done because l-calculus in JS can be done :D
 
-// Monoid String
-String.mempty = ''
-String.mappend = strA => strB => strA + strB
+const Class = {}
 
-// Show Number
-Number.show = _.toString
+Class.Show = show => ({show})
+Class.Monoid = _.identity
 
-// Monoid Number
-Number.mempty = 0
-Number.mappend = x => y => x + y
+Class.Foldable = Foldable => _.assign({
+  fold: Monoid => Foldable.foldl(Monoid.mappend)(Monoid.mempty)
+})(Foldable)
 
-// Show Array
-// (Show a) => [a] -> String
-Array.Show = Show => ({
-  show: xs => `[${xs.map(Show.show).join(', ')}]`
+Class.Functor = _.identity
+
+Class.Functor.fromMonad = Monad => Class.Functor({
+  map: f => ma => Monad.bind(a => Monad.pure(f(a)))(ma)
 })
 
-// Monoid Array
-Array.mempty = []
-Array.mappend = arrA => arrB => arrA.concat(arrB)
+Class.Applicative = Functor => Applicative => _.assign({
+  lift2: f => ma => mb => Applicative.apply(Functor.map(f)(ma))(mb)
+})(Applicative)
+
+Class.Applicative.fromMonad = Monad => 
+  Class.Applicative(Class.Functor.fromMonad(Monad))({
+    pure: Monad.pure,
+    apply: mf => ma => 
+      Monad.bind(f => Monad.bind(a => Monad.pure(f(a)))(ma))(mf)
+  })
+
+Class.Monad = _.identity
+
+// String
+String.Show = Class.Show(s => `'${s}'`)
+
+String.Monoid = Class.Monoid({
+  mempty: '',
+  mappend: strA => strB => strA + strB
+})
+
+// Number
+Number.Show = Class.Show(_.toString)
+
+Number.Monoid = Class.Monoid({
+  mempty: 0,
+  mappend: x => y => x + y
+})
+
+// Array
+
+// (Show a) => [a] -> String
+Array.Show = Show => Class.Show(xs => `[${xs.map(Show.show).join(', ')}]`)
+
+Array.Monoid = Class.Monoid({
+  mempty: [],
+  mappend: arrA => arrB => arrA.concat(arrB)
+})
 
 const uncurry = f => (x, y) => f(x)(y)
 const compose = f => g => x => f(g(x))
 
 // Foldable Array
-Array.foldl = f => _.reduce(uncurry(f))
-Array.foldr = f => _.reduceRight(uncurry(f))
-Array.fold = Monoid => Array.foldr(flip(Monoid.mappend))(Monoid.mempty)
+Array.Foldable = Class.Foldable({
+  foldl: f => _.reduce(uncurry(f)),
+  foldr: f => _.reduceRight(uncurry(flip(f)))
+})
+
+// Maybe
 
 const Maybe = {}
 const Just = Maybe.Just = value => ({ value })
@@ -44,69 +79,93 @@ Maybe.maybe = fallback => f => m => {
   return fallback
 }
 
-Maybe.Show = Show => ({
-  show: Maybe.maybe('Nothing')(Show.show)
+Maybe.Show = Show => Class.Show(Maybe.maybe('Nothing')(Show.show))
+
+Maybe.Functor = Class.Functor({
+  map: f => ma => Maybe.maybe(Nothing)(compose(Just)(f))(ma)
 })
 
-// Monad Maybe
-Maybe.pure = Just
-Maybe.bind = f => m => Maybe.maybe(Nothing)(f)(m)
+// Maybe.Applicative = Class.Applicative(Maybe.Functor)({
+//   pure: Just,
+//   apply: mF => mA => Maybe.maybe(Nothing)(f => Maybe.Functor.map(f)(mA))(mF)
+// })
 
-// Monoid Maybe 
-Maybe.Monoid = Monoid => ({
+Maybe.Monad = Class.Monad({
+  pure: Just,
+  bind: f => m => Maybe.maybe(Nothing)(f)(m)
+})
+
+Maybe.Applicative = Class.Applicative.fromMonad(Maybe.Monad)
+
+console.log('==========|Applicative Maybe|==========')
+
+const mA0 = Maybe.Applicative.lift2(_.add)(Just(2))(Just(5))
+console.log(Maybe.Show(Number.Show).show(mA0))
+const mA1 = Maybe.Applicative.lift2(_.add)(Nothing)(Just(5))
+console.log(Maybe.Show(Number.Show).show(mA1))
+const mA2 = Maybe.Applicative.lift2(_.add)(Just(2))(Nothing)
+console.log(Maybe.Show(Number.Show).show(mA2))
+
+Maybe.Monoid = Monoid => Class.Monoid({
   mempty: Nothing,
-  mappend: mA => mB => 
-    Maybe.bind(x => 
-      Maybe.bind(y => 
-        Just(Monoid.mappend(x)(y)))(mB)
-    )(mA)
+  mappend: ma => mb => 
+    Maybe.Monad.bind(x => 
+      Maybe.Monad.bind(y => 
+        Just(Monoid.mappend(x)(y)))(mb)
+    )(ma)
 })
 
-const m0 = Maybe.Monoid(String).mappend(Just('Hello'))(Just(', world!'))
-console.log(Maybe.Show(String).show(m0))
+console.log('==========|Monoid Maybe|==========')
 
-const m1 = Maybe.Monoid(String).mappend(Just('Hello'))(Nothing)
-console.log(Maybe.Show(String).show(m1))
+const m0 = Maybe.Monoid(String.Monoid).mappend(Just('Hello'))(Just(', world!'))
+console.log(Maybe.Show(String.Show).show(m0))
 
-const m2 = Maybe.Monoid(Number).mappend(Just(3))(Just(7))
-console.log(Maybe.Show(Number).show(m2))
+const m1 = Maybe.Monoid(String.Monoid).mappend(Just('Hello'))(Nothing)
+console.log(Maybe.Show(String.Show).show(m1))
 
-const m3 = Maybe.Monoid(Number).mappend(Nothing)(Just(7))
-console.log(Maybe.Show(Number).show(m3))
+const m2 = Maybe.Monoid(Number.Monoid).mappend(Just(3))(Just(7))
+console.log(Maybe.Show(Number.Show).show(m2))
 
-const m4 = Maybe.Monoid(Array).mappend(Just([1, 2]))(Just([3, 4, 5]))
-console.log(Maybe.Show(Array.Show(Number)).show(m4))
+const m3 = Maybe.Monoid(Number.Monoid).mappend(Nothing)(Just(7))
+console.log(Maybe.Show(Number.Show).show(m3))
 
-const Kleisli = {}
+const m4 = Maybe.Monoid(Array.Monoid).mappend(Just([1, 2]))(Just([3, 4, 5]))
+console.log(Maybe.Show(Array.Show(Number.Show)).show(m4))
 
-Kleisli.compose = Monad => f => g => x => Monad.bind(f)(g(x))
-
-Kleisli.Monoid = Monad => ({
-  mempty: Monad.pure,
-  mappend: Kleisli.compose(Monad)
-})
-
-// (Monad m) => (Foldable t) => t (a -> m a) -> (a -> m a)
-Kleisli.flowM = Monad => Foldable => Foldable.fold(Kleisli.Monoid(Monad))
+const Kleisli = Monad => {
+  const compose = f => g => x => Monad.bind(g)(f(x))
+  const Monoid = Class.Monoid({
+    mempty: Monad.pure,
+    mappend: compose
+  })
+  return {
+    compose,    
+    Monoid,
+    // (Monad m) => (Foldable t) => t (a -> m a) -> (a -> m a)
+    flowM: Foldable => Foldable.fold(Monoid)
+  }
+}
 
 const Tuple = a => b => [a, b]
 Tuple.fst = _.get('0')
 Tuple.snd = _.get('1')
 
 // Show Tuple
-Tuple.Show = ShowA => ShowB => ({
-  show: ([a, b]) => `(${ShowA.show(a)}, ${ShowB.show(b)})`
-})
+Tuple.Show = ShowA => ShowB => Class.Show(
+  ([a, b]) => `(${ShowA.show(a)}, ${ShowB.show(b)})`
+)
 
 const Writer = Tuple // whoa
 
-Writer.Monad = Monoid => ({
+Writer.Monad = Monoid => Class.Monad({
   pure: x => Writer(x)(Monoid.mempty),
   bind: f => w => {
     const wr = f(Tuple.fst(w))
     return Writer(Tuple.fst(wr))(Monoid.mappend(Tuple.snd(w))(Tuple.snd(wr)))
   }
 })
+
+Writer.Kleisli = Monoid => Kleisli(Writer.Monad(Monoid))
 
 const flip = f => x => y => f(y)(x)
 // Writer :: a -> m -> Writer a m
@@ -115,18 +174,20 @@ Writer.log = flip(Writer)
 
 const negateNumber = x => Writer(-x)([`Negated number ${x}!`])
 
-const w0 = Writer.Monad(Array).bind(x => negateNumber(2 * x))(negateNumber(10));
-console.log(Writer.Show(Number)(Array.Show(String)).show(w0))
+console.log('==========|Writer|==========')
+
+const w0 = Writer.Monad(Array.Monoid).bind(x => negateNumber(2 * x))(negateNumber(10));
+console.log(Writer.Show(Number.Show)(Array.Show(String.Show)).show(w0))
 
 // "shorthand"/instantiation
 // (Monoid m) => (Foldable t) => t (a -> Writer a m) -> (a -> Writer a m)
-Writer.flowM = Monoid => Foldable => Kleisli.flowM(Writer.Monad(Monoid))(Foldable)
+Writer.flowM = Monoid => Foldable => Writer.Kleisli(Monoid).flowM(Foldable)
 
-const w1 = Writer.flowM(Array)(Array)([
+const w1 = Writer.flowM(Array.Monoid)(Array.Foldable)([
   Writer.log(['Let\'s negate the number']),
   negateNumber,
   Writer.log(['Now let\'s negate its square']),
   x => negateNumber(x * x)
 ])(37)
 
-console.log(Writer.Show(Number)(Array.Show(String)).show(w1))
+console.log(Writer.Show(Number.Show)(Array.Show(String.Show)).show(w1))
