@@ -1,4 +1,4 @@
-// Morgensen-Scott encoding
+// Mogensen-Scott encoding
 // representing sum types in lambda calculus
 // closure = memory :)
 
